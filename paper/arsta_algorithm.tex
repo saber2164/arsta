@@ -1,0 +1,196 @@
+% ARSTA Algorithm Pseudocode
+% Adaptive RRC State Transition Algorithm for 5G NR UE Energy Optimization
+%
+% Required packages (include in main document):
+% \usepackage{algorithm}
+% \usepackage{algpseudocode}
+% \usepackage{amsmath}
+
+%==============================================================================
+% Algorithm 1: ARSTA State Decision (Main Algorithm)
+%==============================================================================
+\begin{algorithm}[t]
+\caption{ARSTA State Decision}
+\label{alg:arsta}
+\begin{algorithmic}[1]
+\Require UE context $\mathcal{C} = \{\hat{\tau}, v, \nabla R, s, t_{ho}\}$ where:
+\Statex \hspace{1.5em} $\hat{\tau}$: EWMA of inter-arrival times (seconds)
+\Statex \hspace{1.5em} $v$: UE velocity (m/s)
+\Statex \hspace{1.5em} $\nabla R$: RSRP gradient (dB/s)
+\Statex \hspace{1.5em} $s$: current RRC state $\in \{\textsc{Idle}, \textsc{Inactive}, \textsc{Connected}\}$
+\Statex \hspace{1.5em} $t_{ho}$: handover lock expiry time
+\Require Current time $t$, inactivity timer $T_{inact}$, threshold factor $\beta$
+\Require HO lock threshold $\theta_{ho}$ (dB/s)
+\Ensure New state $s'$, DRX cycle $d$ (ms), RNA size $r$
+
+\Statex
+
+\State \textbf{/* Module 1: Traffic Prediction Check */}
+\State $\tau_{th} \gets T_{inact} \times \beta$ \Comment{Compute idle threshold}
+
+\Statex
+
+\State \textbf{/* Module 3: Handover-Aware Locking */}
+\If{$t \geq t_{ho}$} \Comment{Check HO lock expiry}
+    \State $\textit{ho\_locked} \gets \textbf{false}$
+\EndIf
+\If{$\nabla R < \theta_{ho}$ \textbf{and} $\neg\textit{ho\_locked}$} \Comment{Rapid RSRP degradation}
+    \State $\textit{ho\_locked} \gets \textbf{true}$
+    \State $t_{ho} \gets t + \max(v \times 0.01, 0.05)$ \Comment{Lock duration: $10\,\text{ms}/(\text{m/s})$}
+\EndIf
+
+\Statex
+
+\State \textbf{/* Module 2: Mobility-Aware DRX Cycle Selection */}
+\State $d \gets \Call{GetDRXCycle}{v}$ \Comment{See piecewise function below}
+
+\Statex
+
+\State \textbf{/* Module 4: RNA Sizing */}
+\State $r \gets \Call{GetRNASize}{v}$
+
+\Statex
+
+\State \textbf{/* State Transition Decision */}
+\State $s' \gets s$ \Comment{Default: no state change}
+\If{$s = \textsc{Connected}$ \textbf{and} $\hat{\tau} > \tau_{th}$ \textbf{and} $\neg\textit{ho\_locked}$}
+    \State $s' \gets \textsc{Inactive}$ \Comment{Early transition to save energy}
+\EndIf
+
+\Statex
+
+\State \Return $(s', d, r)$
+
+\Statex
+\Statex \hrulefill
+\Statex
+
+\Function{GetDRXCycle}{$v$} \Comment{Velocity-based DRX selection}
+    \State \Return $\begin{cases}
+        160\,\text{ms} & \text{if } v < 5\,\text{m/s} \quad \text{(stationary/pedestrian)}\\
+        80\,\text{ms} & \text{if } 5 \leq v < 15\,\text{m/s} \quad \text{(urban)}\\
+        20\,\text{ms} & \text{if } v \geq 15\,\text{m/s} \quad \text{(highway)}
+    \end{cases}$
+\EndFunction
+
+\Statex
+
+\Function{GetRNASize}{$v$} \Comment{Velocity-based RNA sizing}
+    \State \Return $\begin{cases}
+        \texttt{small} & \text{if } v < 3\,\text{m/s}\\
+        \texttt{medium} & \text{if } 3 \leq v < 15\,\text{m/s}\\
+        \texttt{large} & \text{if } v \geq 15\,\text{m/s}
+    \end{cases}$
+\EndFunction
+
+\end{algorithmic}
+\end{algorithm}
+
+
+%==============================================================================
+% Algorithm 2: EWMA Update (Called on Packet Arrival)
+%==============================================================================
+\begin{algorithm}[t]
+\caption{EWMA Update on Packet Arrival}
+\label{alg:ewma}
+\begin{algorithmic}[1]
+\Require UE context $\mathcal{C}$, packet arrival time $t_{pkt}$, smoothing factor $\alpha$
+\Ensure Updated EWMA $\hat{\tau}'$, updated state $s'$
+
+\Statex
+
+\State \textbf{/* Compute inter-arrival time */}
+\If{$t_{last} > 0$} \Comment{Not first packet}
+    \State $\tau \gets t_{pkt} - t_{last}$ \Comment{Inter-arrival time}
+    \Statex
+    \State \textbf{/* Module 1: Traffic Prediction via EWMA */}
+    \If{$\hat{\tau} = 0$}
+        \State $\hat{\tau}' \gets \tau$ \Comment{Initialize with first sample}
+    \Else
+        \State $\hat{\tau}' \gets \alpha \cdot \tau + (1 - \alpha) \cdot \hat{\tau}$ \Comment{Exponential smoothing}
+    \EndIf
+\Else
+    \State $\hat{\tau}' \gets \hat{\tau}$ \Comment{Keep previous value}
+\EndIf
+
+\Statex
+
+\State $t_{last} \gets t_{pkt}$ \Comment{Update last packet timestamp}
+
+\Statex
+
+\State \textbf{/* State transition on packet arrival */}
+\If{$s \neq \textsc{Connected}$}
+    \State $s' \gets \textsc{Connected}$ \Comment{Resume to Connected on traffic}
+\Else
+    \State $s' \gets s$
+\EndIf
+
+\Statex
+
+\State \Return $(\hat{\tau}', s')$
+
+\end{algorithmic}
+\end{algorithm}
+
+
+%==============================================================================
+% Algorithm 3: RSRP Gradient Update (Optional - for completeness)
+%==============================================================================
+\begin{algorithm}[t]
+\caption{RSRP Gradient Update}
+\label{alg:rsrp}
+\begin{algorithmic}[1]
+\Require Current RSRP $R$ (dBm), timestamp $t$, previous timestamp $t_{prev}$
+\Require RSRP history buffer $\mathbf{H}$ (max size $N=5$)
+\Ensure Updated gradient $\nabla R$ (dB/s)
+
+\Statex
+
+\State $\mathbf{H}.\texttt{append}(R)$ \Comment{Add new measurement}
+\If{$|\mathbf{H}| > N$}
+    \State $\mathbf{H}.\texttt{pop\_front}()$ \Comment{Remove oldest}
+\EndIf
+
+\Statex
+
+\If{$|\mathbf{H}| \geq 2$}
+    \State $\Delta t \gets t - t_{prev}$
+    \If{$\Delta t > 0$}
+        \State $\nabla R \gets \dfrac{\mathbf{H}[-1] - \mathbf{H}[-2]}{\Delta t}$ \Comment{Instantaneous gradient}
+    \EndIf
+\EndIf
+
+\Statex
+
+\State \Return $\nabla R$
+
+\end{algorithmic}
+\end{algorithm}
+
+
+%==============================================================================
+% Notation Summary (for paper text)
+%==============================================================================
+% Use this table in your paper to define notation:
+%
+% \begin{table}[h]
+% \centering
+% \caption{ARSTA Algorithm Notation}
+% \label{tab:notation}
+% \begin{tabular}{cl}
+% \toprule
+% Symbol & Description \\
+% \midrule
+% $\hat{\tau}$ & EWMA of inter-packet arrival times (s) \\
+% $\alpha$ & EWMA smoothing factor (default: 0.3) \\
+% $v$ & UE velocity (m/s) \\
+% $\nabla R$ & RSRP gradient (dB/s) \\
+% $T_{inact}$ & 3GPP inactivity timer (default: 10\,s) \\
+% $\beta$ & Inactive threshold factor (default: 0.6) \\
+% $\theta_{ho}$ & HO lock threshold (default: $-2$\,dB/s) \\
+% $d$ & DRX cycle duration (ms) \\
+% $r$ & RNA size category \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
